@@ -1,0 +1,13 @@
+Dumb JSON Parser (DJParser) is a very simple Objective-C JSON parser, implementing using NSScanner.
+
+It is not designed to be fast or efficient, but designed to be dropped in, in an iPhone or Mac Cocoa application and ready to go. Setting up other JSON parsers for combined iPhone/Cocoa applications is usually complex, and that is the problem that DJParser is trying to solve.
+
+Drop the 2 files in your project, call 
+DJParser *parser = [DJParser parserWithString: myString];
+NSDictionary *resp = [parser parse];
+
+The parse function returns and array or a dictionary.
+
+This parser should be good for quick prototyping and API with small payloads.
+
+
