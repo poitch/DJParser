@@ -116,13 +116,14 @@
             break;
         } else {
             // Invalid json
+            [hash release];
             NSLog(@"Invalid Hash");
             return nil;
         }
         
     }
     
-    return hash;
+    return [hash autorelease];
 }
 
 - (NSArray *) _parseArray
@@ -143,22 +144,36 @@
             value = [self _parseStraightValue];
         }
         
-        [array addObject: value];
-        
-        // Eat spaces
-        while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
-        
-        // If we have , then we have another value, if we have } then we are at the end of that hash
-        if ([scanner scanString: @"," intoString: nil]) {
-        } else if ([scanner scanString: @"]" intoString: nil]) {
-            break;
+        if (!value) {
+            // Empty array
+            if ([scanner scanString: @"]" intoString: nil]) {
+                break;
+            } else {
+                // Invalid Array
+                [array release];
+                NSLog(@"Invalid array");
+                return nil;
+                
+            }
         } else {
-            // Invalid Array
-            NSLog(@"Invalid array");
-            return nil;
+            [array addObject: value];
+            
+            // Eat spaces
+            while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+            
+            // If we have , then we have another value, if we have } then we are at the end of that hash
+            if ([scanner scanString: @"," intoString: nil]) {
+            } else if ([scanner scanString: @"]" intoString: nil]) {
+                break;
+            } else {
+                // Invalid Array
+                [array release];
+                NSLog(@"Invalid array");
+                return nil;
+            }            
         }
     }
-    return array;
+    return [array autorelease];
 }
 
 - (NSString *) _parseStraightValue
@@ -172,12 +187,68 @@
 
 - (NSString *) _parseValue
 {
-    NSString *value = nil;
-    [scanner scanUpToString: @"\"" intoString: &value];
-    // Skip "
+    // unescape the sequence
+    NSMutableString *chars = [[[NSMutableString alloc] init] autorelease];
+ 
+    while (![scanner isAtEnd] && [[scanner string] characterAtIndex: [scanner scanLocation]] != '\"') {
+        unichar currentChar = [[scanner string] characterAtIndex: [scanner scanLocation]];  
+        unichar nextChar;
+                
+        if (currentChar != '\\') {
+            [chars appendFormat:@"%C", currentChar];
+        } else {
+            nextChar = [[scanner string] characterAtIndex: ([scanner scanLocation]+1)];
+
+            switch (nextChar) {
+				case '\"':
+					[chars appendString:@"\""];
+					break;
+				case '\\':
+					[chars appendString:@"\\"];
+					break;
+				case '/':
+					[chars appendString:@"/"];
+					break;
+				case 'b':
+					[chars appendString:@"\b"];
+					break;
+				case 'f':
+					[chars appendString:@"\f"];
+					break;
+				case 'n':
+					[chars appendString:@"\n"];
+					break;
+				case 'r':
+					[chars appendString:@"\r"];
+					break;
+				case 't':
+					[chars appendString:@"\t"];
+					break;
+				case 'u': // unicode sequence - get string of hex chars, convert to int, convert to unichar, append
+                {
+                    NSScanner *s = [NSScanner scannerWithString: [[scanner string] substringWithRange: NSMakeRange([scanner scanLocation] + 2, 4)]];
+                    unsigned unicodeHexValue;
+                    [s scanHexInt: &unicodeHexValue];
+                    [chars appendFormat: @"%C", unicodeHexValue];
+                    [scanner setScanLocation: [scanner scanLocation] + 4];
+                }
+                    
+                    
+					break;
+				default:
+					[chars appendFormat:@"\\%C", nextChar];
+					break;
+            }
+            [scanner setScanLocation: [scanner scanLocation] + 1];
+        }
+        [scanner setScanLocation: [scanner scanLocation] + 1];    
+    }
     [scanner setScanLocation: [scanner scanLocation] + 1];
-    return value;
+    
+    return chars;
 }
+
+
 
 
 - (NSString *) _cleanupQuotes: (NSString *)input
