@@ -80,31 +80,43 @@
 {
     NSMutableDictionary *hash = [[NSMutableDictionary alloc] init];
     
+	// Test for empty hash
+	if ([[scanner string] characterAtIndex: [scanner scanLocation]] == '}') {
+		// skip it
+        [scanner setScanLocation: [scanner scanLocation] + 1];
+		
+		return [hash autorelease];
+	}
+	
     while (![scanner isAtEnd]) {
         NSString *key = nil;
         id value = nil;
+        NSString *scrape = nil;
         
         while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
         [scanner scanUpToString: @":" intoString: &key];
         key = [key stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
         key = [self _cleanupQuotes: key];
-        
+
         // Skip :
         [scanner setScanLocation: [scanner scanLocation] + 1];
         // Eat spaces
         while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
         
-        
         if ([scanner scanCharactersFromSet: setArray intoString: nil]) {
             value = [self _parseArray];
         } else if ([scanner scanCharactersFromSet: setHash intoString: nil]) {
             value = [self _parseHash];
-        } else if ([scanner scanCharactersFromSet: setValue intoString: nil]) {
-            value = [self _parseValue];
+        } else if ([scanner scanCharactersFromSet: setValue intoString: &scrape]) {
+            if ([scrape isEqualToString: @"\"\""]) {
+                value = @"";
+            } else {
+                value = [self _parseValue];                
+            }
         } else {
             value = [self _parseStraightValue];
         }
-        
+		
         [hash setObject: value forKey: key];
         
         // Eat spaces
@@ -129,8 +141,16 @@
 - (NSArray *) _parseArray
 {
     NSMutableArray *array = [[NSMutableArray alloc] init];
-    while (![scanner isAtEnd]) {
+   
+	// Test for empty hash
+	if ([[scanner string] characterAtIndex: [scanner scanLocation]] == ']') {
+		[scanner setScanLocation: [scanner scanLocation] + 1];
+		return [array autorelease];
+	}
+	
+	while (![scanner isAtEnd]) {
         id value = nil;
+        NSString *scrape = nil;
         
         while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
         
@@ -138,8 +158,12 @@
             value = [self _parseArray];
         } else if ([scanner scanCharactersFromSet: setHash intoString: nil]) {
             value = [self _parseHash];
-        } else if ([scanner scanCharactersFromSet: setValue intoString: nil]) {
-            value = [self _parseValue];
+        } else if ([scanner scanCharactersFromSet: setValue intoString: &scrape]) {
+            if ([scrape isEqualToString: @"\"\""]) {
+                value = @"";
+            } else {
+                value = [self _parseValue];                
+            }
         } else {
             value = [self _parseStraightValue];
         }
@@ -189,11 +213,11 @@
 {
     // unescape the sequence
     NSMutableString *chars = [[[NSMutableString alloc] init] autorelease];
- 
+
     while (![scanner isAtEnd] && [[scanner string] characterAtIndex: [scanner scanLocation]] != '\"') {
         unichar currentChar = [[scanner string] characterAtIndex: [scanner scanLocation]];  
         unichar nextChar;
-                
+
         if (currentChar != '\\') {
             [chars appendFormat:@"%C", currentChar];
         } else {
