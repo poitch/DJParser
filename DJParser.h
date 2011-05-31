@@ -31,7 +31,6 @@
     NSCharacterSet *setArray;
     NSCharacterSet *setHash;
     NSCharacterSet *setValue;
-    NSCharacterSet *setSpaces;
     
     NSMutableDictionary *stack;
 }
@@ -43,4 +42,5 @@
 
 - (id) parse;
 
++ (id) parse: (NSString *)json;
 @end

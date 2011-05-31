@@ -17,12 +17,18 @@
 
 #import "DJParser.h"
 
+//#define LEFT() NSLog(@"[LEFT] '%@'", [[scanner string] substringFromIndex: [scanner scanLocation]]);
+#define LEFT()
+
+
 @interface DJParser (Private)
 
 - (NSDictionary *) _parseHash;
 - (NSArray *) _parseArray;
-- (NSString *) _parseStraightValue;
-- (NSString *) _parseValue;
+- (id) _parseStraightValue;
+- (id) _parseQuotedValue;
+
+- (id) _parseRawValue: (NSCharacterSet *)endDelimiters;
 - (NSString *) _cleanupQuotes: (NSString *)input;
 
 @end
@@ -50,25 +56,48 @@
     [super dealloc];
 }
 
++ (id) parse: (NSString *)json
+{
+    DJParser *parser = [DJParser parserWithString: json];
+    return [parser parse];
+}
+
 - (id) parse
 {
+    NSString *scrape = nil;
+    
     scanner = [NSScanner scannerWithString: json];
+    [scanner setCharactersToBeSkipped: nil];
     
     stack = [[NSMutableDictionary alloc] init];
     
     setArray = [NSCharacterSet characterSetWithCharactersInString: @"["];
     setHash = [NSCharacterSet characterSetWithCharactersInString: @"{"];
     setValue = [NSCharacterSet characterSetWithCharactersInString: @"\""];
-    setSpaces = [NSCharacterSet characterSetWithCharactersInString: @" \n\r\t"];
     
     if ([scanner scanCharactersFromSet: setArray intoString: nil]) {
         return [self _parseArray];
     } else if ([scanner scanCharactersFromSet: setHash intoString: nil]) {
         return [self _parseHash];
     } else {
-        NSLog(@"Invalid JSON");
+        [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
+        if ([scanner scanCharactersFromSet: setValue intoString: &scrape]) {
+            if ([scrape isEqualToString: @"\"\""]) {
+                return @"";
+            } else {
+                return [self _parseQuotedValue];                
+            }
+        } else {
+            id value = [self _parseStraightValue];
+            
+            // Non quoted JSON can only be true, false, null or numerical
+            if ([[value className] isEqualToString: @"NSCFString"]) {
+               NSLog(@"Invalid JSON");
+               return nil;
+            }
+            return value;
+        }
     }
-    
     return nil;
 }
 
@@ -92,16 +121,42 @@
         NSString *key = nil;
         id value = nil;
         NSString *scrape = nil;
+
+        LEFT();
         
-        while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+        // Eat leading spaces
+        [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
+        
+        LEFT();
+        
         [scanner scanUpToString: @":" intoString: &key];
-        key = [key stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        LEFT();
+        
+        key = [key stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
         key = [self _cleanupQuotes: key];
 
+        //NSLog(@"[KEY] '%@'", key);
+        
+        if ([key isEqualToString: @"}"]) {
+            return hash;
+        }
+        
+        if ([scanner isAtEnd]) {
+            NSLog(@"Invalid hash");
+            return nil;
+        }
+        
         // Skip :
         [scanner setScanLocation: [scanner scanLocation] + 1];
+        if ([scanner isAtEnd]) {
+            NSLog(@"Invalid hash");
+            return nil;
+        }
+        
         // Eat spaces
-        while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+        [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
+
         
         if ([scanner scanCharactersFromSet: setArray intoString: nil]) {
             value = [self _parseArray];
@@ -111,16 +166,22 @@
             if ([scrape isEqualToString: @"\"\""]) {
                 value = @"";
             } else {
-                value = [self _parseValue];                
+                value = [self _parseQuotedValue];                
             }
         } else {
             value = [self _parseStraightValue];
         }
+        
+        //NSLog(@"[VALUE] '%@'", value);
 		
+        if (!value) {
+            return nil;
+        }
+        
         [hash setObject: value forKey: key];
         
         // Eat spaces
-        while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+        [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
         
         // If we have , then we have another value, if we have } then we are at the end of that hash
         if ([scanner scanString: @"," intoString: nil]) {
@@ -152,7 +213,11 @@
         id value = nil;
         NSString *scrape = nil;
         
-        while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+        LEFT();
+        
+        [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
+        
+        LEFT();
         
         if ([scanner scanCharactersFromSet: setArray intoString: nil]) {
             value = [self _parseArray];
@@ -162,7 +227,7 @@
             if ([scrape isEqualToString: @"\"\""]) {
                 value = @"";
             } else {
-                value = [self _parseValue];                
+                value = [self _parseQuotedValue];                
             }
         } else {
             value = [self _parseStraightValue];
@@ -183,7 +248,7 @@
             [array addObject: value];
             
             // Eat spaces
-            while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+            [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
             
             // If we have , then we have another value, if we have } then we are at the end of that hash
             if ([scanner scanString: @"," intoString: nil]) {
@@ -200,21 +265,64 @@
     return [array autorelease];
 }
 
-- (NSString *) _parseStraightValue
+- (id) _parseStraightValue
 {
+    /*
     NSString *value = nil;
     NSCharacterSet *end = [NSCharacterSet characterSetWithCharactersInString: @" \n\t,}]"];
     [scanner scanUpToCharactersFromSet: end intoString: &value];
-    while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);
+    while ([scanner scanCharactersFromSet: setSpaces intoString: nil]);    
+    return value;
+    */
+    //NSLog(@"[S]");
+    id value = [self _parseRawValue: [NSCharacterSet characterSetWithCharactersInString: @" \n\t,}]"]];
+    [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
+    
+    if (!value) {
+        return nil;
+    }
+    
+    //NSLog(@" -> %@ (%@)", value, [[scanner string] substringFromIndex: [scanner scanLocation]]);
+    if ([value isEqualToString: @"true"]) {
+        return [NSNumber numberWithBool: YES];
+    } else if ([value isEqualToString: @"false"]) {
+        return [NSNumber numberWithBool: NO];
+    } else if ([value isEqualToString: @"null"]) {
+        return [NSNull null];
+    }
+    
+    NSScanner *valueScanner = [NSScanner scannerWithString: value];
+    NSDecimal decimalValue;
+    if ([valueScanner scanDecimal: &decimalValue]) {
+        return [NSDecimalNumber decimalNumberWithDecimal: decimalValue];
+    }
+
+    
     return value;
 }
 
-- (NSString *) _parseValue
+- (id) _parseQuotedValue
+{
+    //NSLog(@"[Q]");
+    id value = [self _parseRawValue: [NSCharacterSet characterSetWithCharactersInString: @"\""]];
+    if (![scanner isAtEnd]) [scanner setScanLocation: [scanner scanLocation] + 1];
+    return value;
+
+}
+
+- (id) _parseRawValue: (NSCharacterSet *)endDelimiters
 {
     // unescape the sequence
-    NSMutableString *chars = [[[NSMutableString alloc] init] autorelease];
+    NSMutableString *chars = nil;
 
-    while (![scanner isAtEnd] && [[scanner string] characterAtIndex: [scanner scanLocation]] != '\"') {
+
+    //NSLog(@" <- '%@'", [[scanner string] substringFromIndex: [scanner scanLocation]]);
+    
+    while (![scanner isAtEnd] && ![endDelimiters characterIsMember: [[scanner string] characterAtIndex: [scanner scanLocation]]]) {
+        if (!chars) chars = [[[NSMutableString alloc] init] autorelease];
+
+        //NSLog(@" . '%@'", [[scanner string] substringFromIndex: [scanner scanLocation]]);
+
         unichar currentChar = [[scanner string] characterAtIndex: [scanner scanLocation]];  
         unichar nextChar;
 
@@ -267,7 +375,8 @@
         }
         [scanner setScanLocation: [scanner scanLocation] + 1];    
     }
-    [scanner setScanLocation: [scanner scanLocation] + 1];
+    //if (![scanner isAtEnd]) [scanner setScanLocation: [scanner scanLocation] + 1];
+    
     
     return chars;
 }
