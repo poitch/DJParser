@@ -1,6 +1,6 @@
 //
 //  Parser.h
-//  TestGeo
+//  DJParser
 //
 //  Created by Jerome Poichet on 1/6/10.
 //  Copyright 2010 Jerome Poichet. All rights reserved.

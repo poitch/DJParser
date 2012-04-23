@@ -1,6 +1,6 @@
 //
 //  Parser.m
-//  TestGeo
+//  DJParser
 //
 //  Created by Jerome Poichet on 1/6/10.
 //  Copyright 2010 Jerome Poichet. All rights reserved.
@@ -19,6 +19,9 @@
 
 //#define LEFT() NSLog(@"[LEFT] '%@'", [[scanner string] substringFromIndex: [scanner scanLocation]]);
 #define LEFT()
+
+// Comparison
+// http://psionides.eu/2010/12/12/cocoa-json-parsing-libraries-part-2/
 
 
 @interface DJParser (Private)
@@ -44,7 +47,7 @@
 
 - (id) initWithString: (NSString *)s
 {
-    if (self = [super init]) {
+    if ((self = [super init])) {
         self.json = s;
     }
     return self;
@@ -91,7 +94,7 @@
             id value = [self _parseStraightValue];
             
             // Non quoted JSON can only be true, false, null or numerical
-            if ([[value className] isEqualToString: @"NSCFString"]) {
+            if ([value isKindOfClass: [NSString string]]) {
                NSLog(@"Invalid JSON");
                return nil;
             }
@@ -157,8 +160,10 @@
         // Eat spaces
         [scanner scanCharactersFromSet: [NSCharacterSet whitespaceCharacterSet] intoString: nil];
 
-        
-        if ([scanner scanCharactersFromSet: setArray intoString: nil]) {
+        if ([scanner scanCharactersFromSet: setArray intoString: &scrape]) {
+            // Could be multiple [ in a row, scan back if necessary
+            int depth = [scrape length] - 1;
+            [scanner setScanLocation: [scanner scanLocation] - depth];
             value = [self _parseArray];
         } else if ([scanner scanCharactersFromSet: setHash intoString: nil]) {
             value = [self _parseHash];
@@ -209,6 +214,8 @@
 		return [array autorelease];
 	}
 	
+    //NSLog(@"Starting array %@...", [[[scanner string] substringFromIndex: [scanner scanLocation]] substringToIndex: 32]);
+    
 	while (![scanner isAtEnd]) {
         id value = nil;
         NSString *scrape = nil;
@@ -232,7 +239,7 @@
         } else {
             value = [self _parseStraightValue];
         }
-        
+                
         if (!value) {
             // Empty array
             if ([scanner scanString: @"]" intoString: nil]) {
@@ -253,6 +260,7 @@
             // If we have , then we have another value, if we have } then we are at the end of that hash
             if ([scanner scanString: @"," intoString: nil]) {
             } else if ([scanner scanString: @"]" intoString: nil]) {
+                // End of array
                 break;
             } else {
                 // Invalid Array
